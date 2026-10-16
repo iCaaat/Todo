@@ -1,0 +1,37 @@
+# Dependencies, caches and generated builds
+node_modules/
+.npm-cache/
+dist/
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Local runnable binaries, installers and resource copies
+/releases/*
+!/releases/README.md
+*.exe
+*.msi
+*.pdb
+
+# Verification output
+test-results/
+playwright-report/
+*.log
+
+# Local secrets and application data (never needed to build)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+tasks.json
+tasks.backup.json
+preferences.json
+reminders-sent.json
+
+# Editor / OS local files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini

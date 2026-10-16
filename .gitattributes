@@ -1,0 +1,18 @@
+# Keep text diffs and cross-platform checkouts predictable.
+* text=auto
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.cjs text eol=lf
+*.mjs text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.exe binary
+*.png binary
+*.ico binary
+*.icns binary

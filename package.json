@@ -1,0 +1,32 @@
+{
+  "name": "aip-todo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 1420 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "tauri": "tauri",
+    "build:exe": "tauri build --no-bundle && node scripts/collect-builds.mjs",
+    "build:installer": "tauri build --bundles nsis && node scripts/collect-builds.mjs",
+    "collect:exe": "node scripts/collect-builds.mjs",
+    "pretest": "npm run build",
+    "test": "node tests/run.cjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-notification": "^2.4.0",
+    "lucide-react": "^1.47.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^5.7.3",
+    "vite": "^8.3.0"
+  }
+}

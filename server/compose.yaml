@@ -1,0 +1,39 @@
+name: todo-sync
+services:
+  sync:
+    image: todo-sync-server:0.1.0
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${TODO_SYNC_BIND:-0.0.0.0}:${TODO_SYNC_PORT:-18080}:3000"
+    environment:
+      DATA_DIR: /data
+      BACKUP_DIR: /backups
+      PORT: "3000"
+      HISTORY_LIMIT: "${TODO_SYNC_HISTORY_LIMIT:-50}"
+    volumes:
+      - data:/data
+      - backups:/backups
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+volumes:
+  data:
+  backups:

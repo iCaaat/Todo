@@ -1,6 +1,7 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('node:assert/strict'),http=require('http');
 const ts=require('typescript'),modules={};
 function load(name){
+ if(name.endsWith('.json'))return {default:JSON.parse(fs.readFileSync(path.join('src',name),'utf8'))};
  if(modules[name])return modules[name];const mod={exports:{}};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/'+name+'.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:mod.exports,module:mod,Date,Set,require:id=>load(id.replace('./',''))});
  return modules[name]=mod.exports;

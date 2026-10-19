@@ -28,6 +28,7 @@ tasks.json
 tasks.backup.json
 preferences.json
 reminders-sent.json
+holidays.json
 
 # Editor / OS local files
 .vscode/
@@ -35,3 +36,9 @@ reminders-sent.json
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local sync configuration, checkpoints and recovery snapshots
+sync-config.json
+sync-state.json
+sync-apply.pending.json
+sync-backups/

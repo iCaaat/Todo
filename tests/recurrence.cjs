@@ -1,11 +1,8 @@
 const fs=require("fs"),path=require("path"),vm=require("vm"),assert=require("node:assert/strict"),http=require("http");
 const root=process.cwd();
 const ts=require(path.join(root,"node_modules/typescript"));
-const moduleResult={exports:{}};
-const placementModule={exports:{}};
-vm.runInNewContext(ts.transpileModule(fs.readFileSync("src/taskPlacement.ts","utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:placementModule.exports,module:placementModule});
-vm.runInNewContext(ts.transpileModule(fs.readFileSync("src/recurrence.ts","utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:moduleResult.exports,module:moduleResult,Date,Set,require:()=>placementModule.exports});
-const {expandRecurringTasks:expand,occurrenceAt}=moduleResult.exports;
+const {loadSource}=require('./helpers.cjs');
+const {expandRecurringTasks:expand,occurrenceAt}=loadSource('recurrence');
 const at=s=>new Date(s).getTime();
 const make=(overrides={})=>({id:"daily-original",text:"下班打卡",done:false,collapsed:false,children:[],groupId:"daily",reminderAt:"2026-10-14T17:55:00+08:00",reminder:"2026-10-14T17:55",repeat:"daily",...overrides});
 const original=make({children:[make({id:"child",text:"子任务",done:true,repeat:"",reminderAt:"",children:[]})]});

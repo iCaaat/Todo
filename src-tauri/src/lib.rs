@@ -3,6 +3,9 @@ use tauri::{Manager, Emitter, WebviewUrl, WebviewWindowBuilder, menu::{Menu,Menu
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_notification::NotificationExt;
 
+mod sync;
+mod task_groups;
+
 static DATA_LOCK:Mutex<()> = Mutex::new(());
 fn read_json(path:&std::path::Path)->Result<serde_json::Value,String>{
  if !path.exists(){return Ok(serde_json::json!([]))}
@@ -10,40 +13,62 @@ fn read_json(path:&std::path::Path)->Result<serde_json::Value,String>{
 }
 fn write_json(path:&std::path::Path,value:&serde_json::Value)->Result<(),String>{
  let temp=path.with_extension("tmp");
- std::fs::write(&temp,serde_json::to_vec_pretty(value).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
- std::fs::copy(&temp,path).map_err(|e|e.to_string())?;
- let _=std::fs::remove_file(temp);
+ let mut file=std::fs::File::create(&temp).map_err(|e|e.to_string())?;
+ std::io::Write::write_all(&mut file,&serde_json::to_vec_pretty(value).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+ file.sync_all().map_err(|e|e.to_string())?;drop(file);
+ std::fs::rename(&temp,path).map_err(|e|e.to_string())?;
  Ok(())
 }
 #[tauri::command]
 fn load_tasks(app:tauri::AppHandle)->Result<serde_json::Value,String>{
  let _lock=DATA_LOCK.lock().map_err(|e|e.to_string())?;
- read_json(&app.path().app_data_dir().map_err(|e|e.to_string())?.join("tasks.json"))
+ let dir=app.path().app_data_dir().map_err(|e|e.to_string())?;sync::recover(&dir)?;
+ task_groups::repair_local(&dir,read_json(&dir.join("tasks.json"))?)
 }
 #[tauri::command]
 fn save_tasks(app:tauri::AppHandle,tasks:serde_json::Value)->Result<(),String>{
  let _lock=DATA_LOCK.lock().map_err(|e|e.to_string())?;
  let dir=app.path().app_data_dir().map_err(|e|e.to_string())?;
  std::fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
+ sync::recover(&dir)?;
  let path=dir.join("tasks.json");
  if path.exists(){let _=std::fs::copy(&path,dir.join("tasks.backup.json"));}
  write_json(&path,&tasks)
 }
 #[tauri::command]
 fn load_preferences(app:tauri::AppHandle)->Result<serde_json::Value,String>{
- let path=app.path().app_data_dir().map_err(|e|e.to_string())?.join("preferences.json");
+ let _lock=DATA_LOCK.lock().map_err(|e|e.to_string())?;
+ let dir=app.path().app_data_dir().map_err(|e|e.to_string())?;sync::recover(&dir)?;
+ let path=dir.join("preferences.json");
  if !path.exists(){return Ok(serde_json::Value::Null)}
  read_json(&path)
 }
 #[tauri::command]
 fn save_preferences(app:tauri::AppHandle,state:serde_json::Value)->Result<(),String>{
+ let _lock=DATA_LOCK.lock().map_err(|e|e.to_string())?;
  let dir=app.path().app_data_dir().map_err(|e|e.to_string())?;
  std::fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
+ sync::recover(&dir)?;
  write_json(&dir.join("preferences.json"),&state)
+}
+#[tauri::command]
+fn load_holidays(app:tauri::AppHandle)->Result<serde_json::Value,String>{
+ let _lock=DATA_LOCK.lock().map_err(|e|e.to_string())?;
+ let path=app.path().app_data_dir().map_err(|e|e.to_string())?.join("holidays.json");
+ if !path.exists(){return Ok(serde_json::Value::Null)}
+ read_json(&path)
+}
+#[tauri::command]
+fn save_holidays(app:tauri::AppHandle,data:serde_json::Value)->Result<(),String>{
+ if !data.is_object() || data.as_object().map_or(0,|v|v.len())>200 || data.to_string().len()>2_000_000{return Err("节假日缓存格式无效".into())}
+ let _lock=DATA_LOCK.lock().map_err(|e|e.to_string())?;
+ let dir=app.path().app_data_dir().map_err(|e|e.to_string())?;
+ std::fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
+ write_json(&dir.join("holidays.json"),&data)
 }
 fn due_tasks(tasks:&serde_json::Value,now:i64,result:&mut Vec<(String,String)>){
  if let Some(items)=tasks.as_array(){for t in items{
- if t["done"].as_bool()!=Some(true){
+ if t["done"].as_bool()!=Some(true) && t["repeatPending"].as_bool()!=Some(true){
  if let (Some(id),Some(at))=(t["id"].as_str(),t["reminderAt"].as_str()){
  if let Ok(time)=chrono::DateTime::parse_from_rfc3339(at){
  if time.timestamp()<=now{result.push((format!("{id}|{at}"),t["text"].as_str().unwrap_or("待办任务").to_string()));}
@@ -55,6 +80,7 @@ fn due_tasks(tasks:&serde_json::Value,now:i64,result:&mut Vec<(String,String)>){
 fn reminder_tick(app:&tauri::AppHandle)->Result<(),String>{
  let _lock=DATA_LOCK.lock().map_err(|e|e.to_string())?;
  let dir=app.path().app_data_dir().map_err(|e|e.to_string())?;
+ sync::recover(&dir)?;
  let tasks=read_json(&dir.join("tasks.json"))?;
  let mut due=vec![];due_tasks(&tasks,chrono::Utc::now().timestamp(),&mut due);
  if due.is_empty(){return Ok(())}
@@ -98,7 +124,7 @@ pub fn run(){
  .plugin(tauri_plugin_autostart::Builder::new().build())
  .plugin(tauri_plugin_dialog::init())
  .plugin(tauri_plugin_notification::init())
- .invoke_handler(tauri::generate_handler![load_tasks,save_tasks,load_preferences,save_preferences,set_pinned,open_tool,hide_window,get_startup,set_startup,test_notification,open_calendar])
+ .invoke_handler(tauri::generate_handler![sync::sync_load_config,sync::sync_save_config,sync::sync_load_checkpoint,sync::sync_save_checkpoint,sync::sync_http,sync::sync_backup,sync::sync_apply,load_tasks,save_tasks,load_preferences,save_preferences,load_holidays,save_holidays,set_pinned,open_tool,hide_window,get_startup,set_startup,test_notification,open_calendar])
  .setup(|app|{
  let show=MenuItem::with_id(app,"show","显示待办",true,None::<&str>)?;
  let quit=MenuItem::with_id(app,"quit","退出",true,None::<&str>)?;
@@ -137,6 +163,14 @@ mod tests{
  #[test] fn legacy_and_invalid_dates(){
  let tasks=serde_json::json!([{"id":"legacy","children":[]},{"id":"bad","reminderAt":"bad","children":[]}]);
  let mut due=vec![];due_tasks(&tasks,i64::MAX,&mut due);assert!(due.is_empty());
+ }
+ #[test] fn pending_holiday_reminders_are_not_sent(){
+ let tasks=serde_json::json!([
+ {"id":"pending","done":false,"repeatPending":true,"reminderAt":"2026-01-01T00:00:00Z","children":[]},
+ {"id":"ready","done":false,"repeatPending":false,"reminderAt":"2026-01-01T00:00:00Z","children":[]}
+ ]);
+ let mut due=vec![];due_tasks(&tasks,i64::MAX,&mut due);
+ assert_eq!(due.len(),1);assert_eq!(due[0].0,"ready|2026-01-01T00:00:00Z");
  }
 }
 

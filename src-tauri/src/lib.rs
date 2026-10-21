@@ -1,5 +1,5 @@
 use std::{collections::HashSet, sync::Mutex, time::Duration};
-use tauri::{Manager, Emitter, WebviewUrl, WebviewWindowBuilder, menu::{Menu,MenuItem}, tray::{TrayIconBuilder,TrayIconEvent,MouseButton,MouseButtonState}};
+use tauri::{Manager, Emitter, LogicalSize, WebviewUrl, WebviewWindowBuilder, menu::{Menu,MenuItem}, tray::{TrayIconBuilder,TrayIconEvent,MouseButton,MouseButtonState}};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_notification::NotificationExt;
 
@@ -7,6 +7,7 @@ mod sync;
 mod task_groups;
 
 static DATA_LOCK:Mutex<()> = Mutex::new(());
+static FLOATING_SIZE:Mutex<Option<(u32,u32)>> = Mutex::new(None);
 fn read_json(path:&std::path::Path)->Result<serde_json::Value,String>{
  if !path.exists(){return Ok(serde_json::json!([]))}
  serde_json::from_slice(&std::fs::read(path).map_err(|e|e.to_string())?).map_err(|e|e.to_string())
@@ -112,6 +113,47 @@ fn open_tool(app:tauri::AppHandle,path:String)->Result<(),String>{
 #[tauri::command]
 fn set_pinned(window:tauri::WebviewWindow,value:bool)->Result<(),String>{window.set_always_on_top(value).map_err(|e|e.to_string())}
 #[tauri::command]
+fn set_floating(window:tauri::WebviewWindow,value:bool)->Result<(),String>{
+ // outer_size/outer_position are physical pixels; keep every size and position
+ // calculation in physical values so float cycles stay stable on scaled displays.
+ let mut saved=FLOATING_SIZE.lock().map_err(|e|e.to_string())?;
+ if value{
+  if saved.is_none(){if let Ok(size)=window.outer_size(){*saved=Some((size.width,size.height));}}
+  window.set_min_size::<LogicalSize<f64>>(None).map_err(|e|e.to_string())?;
+  window.set_decorations(false).map_err(|e|e.to_string())?;
+  window.set_resizable(false).map_err(|e|e.to_string())?;
+  if let (Ok(position),Ok(size))=(window.outer_position(),window.outer_size()){
+   let ball=80.0*window.scale_factor().unwrap_or(1.0);
+   let left=position.x as f64+(size.width as f64-ball)/2.0;
+   let top=position.y as f64+(size.height as f64-ball)/2.0;
+   window.set_position(tauri::PhysicalPosition::new(left as i32,top as i32)).map_err(|e|e.to_string())?;
+  }
+  window.set_size(LogicalSize::new(80.0,80.0)).map_err(|e|e.to_string())?;
+ }else{
+  let scale=window.scale_factor().unwrap_or(1.0);
+  let (width,height)=match saved.take(){Some((w,h))=>(w as f64,h as f64),None=>(420.0*scale,560.0*scale)};
+  // Expand centered on the ball (the user may have dragged it elsewhere),
+  // clamped to the current monitor work area.
+  let center=window.outer_position().ok().and_then(|p|window.outer_size().ok().map(|s|(p.x as f64+s.width as f64/2.0,p.y as f64+s.height as f64/2.0)));
+  window.set_size(tauri::PhysicalSize::new(width as u32,height as u32)).map_err(|e|e.to_string())?;
+  window.set_decorations(true).map_err(|e|e.to_string())?;
+  if let Some((cx,cy))=center{
+   let (mut left,mut top)=(cx-width/2.0,cy-height/2.0);
+   if let Ok(Some(monitor))=window.current_monitor(){
+    let area=monitor.work_area();
+    left=left.clamp(area.position.x as f64,area.position.x as f64+area.size.width as f64-width);
+    top=top.clamp(area.position.y as f64,area.position.y as f64+area.size.height as f64-height);
+   }
+   window.set_position(tauri::PhysicalPosition::new(left as i32,top as i32)).map_err(|e|e.to_string())?;
+  }
+  window.set_min_size(Some(LogicalSize::new(340.0,300.0))).map_err(|e|e.to_string())?;
+  window.set_resizable(true).map_err(|e|e.to_string())?;
+ }
+ Ok(())
+}
+#[tauri::command]
+fn start_drag(window:tauri::WebviewWindow)->Result<(),String>{window.start_dragging().map_err(|e|e.to_string())}
+#[tauri::command]
 fn hide_window(window:tauri::WebviewWindow)->Result<(),String>{window.hide().map_err(|e|e.to_string())}
 #[tauri::command]
 fn get_startup(app:tauri::AppHandle)->Result<bool,String>{app.autolaunch().is_enabled().map_err(|e|e.to_string())}
@@ -124,7 +166,7 @@ pub fn run(){
  .plugin(tauri_plugin_autostart::Builder::new().build())
  .plugin(tauri_plugin_dialog::init())
  .plugin(tauri_plugin_notification::init())
- .invoke_handler(tauri::generate_handler![sync::sync_load_config,sync::sync_save_config,sync::sync_load_checkpoint,sync::sync_save_checkpoint,sync::sync_http,sync::sync_backup,sync::sync_apply,load_tasks,save_tasks,load_preferences,save_preferences,load_holidays,save_holidays,set_pinned,open_tool,hide_window,get_startup,set_startup,test_notification,open_calendar])
+.invoke_handler(tauri::generate_handler![sync::sync_load_config,sync::sync_save_config,sync::sync_load_checkpoint,sync::sync_save_checkpoint,sync::sync_http,sync::sync_backup,sync::sync_apply,load_tasks,save_tasks,load_preferences,save_preferences,load_holidays,save_holidays,set_pinned,set_floating,start_drag,open_tool,hide_window,get_startup,set_startup,test_notification,open_calendar])
  .setup(|app|{
  let show=MenuItem::with_id(app,"show","显示待办",true,None::<&str>)?;
  let quit=MenuItem::with_id(app,"quit","退出",true,None::<&str>)?;

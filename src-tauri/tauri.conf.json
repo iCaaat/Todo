@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Todo",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "identifier": "com.aiproj.todo",
   "build": {
     "frontendDist": "../dist",
@@ -17,6 +17,7 @@
         "height": 560,
         "resizable": true,
         "fullscreen": false,
+        "transparent": true,
         "minWidth": 340,
         "minHeight": 300,
         "alwaysOnTop": true,
